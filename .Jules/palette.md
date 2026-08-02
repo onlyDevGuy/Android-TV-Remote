@@ -1,0 +1,3 @@
+## 2025-02-12 - Jetpack Compose Custom Semantics for PointerInput Interaction
+**Learning:** In Jetpack Compose, using low-level pointerInput or detectTapGestures to capture touches/holds skips standard accessibility bindings (like Role.Button, onClick action, and disabled states) normally provided by Modifier.clickable. Screen readers (like TalkBack) will fail to recognize these as buttons, cannot toggle disabled states, and cannot trigger custom clicks.
+**Action:** Always add an explicit .semantics block when building custom-drawn interactive elements. Declare role = Role.Button, specify disabled() when appropriate, set selected state if toggleable/pill, and provide a semantic onClick action mapped to the custom touch triggers.
