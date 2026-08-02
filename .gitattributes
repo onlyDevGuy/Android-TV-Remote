@@ -1,0 +1,19 @@
+# Normalise to LF in the repository regardless of the contributor's platform.
+* text=auto eol=lf
+
+# gradlew is executed by /bin/sh on the CI runner; CRLF here is a "bad interpreter" failure.
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Windows batch files genuinely need CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never touch binaries.
+*.jar binary
+*.jks binary
+*.keystore binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.apk binary
