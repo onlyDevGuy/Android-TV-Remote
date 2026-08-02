@@ -64,6 +64,12 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+
+    testOptions {
+        // DiagnosticsLog mirrors to android.util.Log, whose stubs throw by default under JVM
+        // tests. Returning defaults lets the buffer logic be tested without a device.
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {

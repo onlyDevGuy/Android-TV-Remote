@@ -19,6 +19,7 @@ import com.sizwe.tvremote.core.TransportCapability
 import com.sizwe.tvremote.core.TransportError
 import com.sizwe.tvremote.core.TransportException
 import com.sizwe.tvremote.core.TransportType
+import com.sizwe.tvremote.diagnostics.DiagnosticsLog
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -177,7 +178,7 @@ class BluetoothHidTransport(
             callback,
         )
     }.getOrElse {
-        Log.e(TAG, "registerApp threw", it)
+        DiagnosticsLog.e(TAG, "registerApp threw", it)
         false
     }
 
@@ -303,7 +304,7 @@ class BluetoothHidTransport(
         }
         val (reportId, data) = report
         val sent = runCatching { proxy.sendReport(device, reportId.toInt(), data) }.getOrElse {
-            Log.e(TAG, "sendReport threw", it)
+            DiagnosticsLog.e(TAG, "sendReport threw", it)
             false
         }
         return if (sent) {
@@ -331,7 +332,7 @@ class BluetoothHidTransport(
     private val callback = object : BluetoothHidDevice.Callback() {
 
         override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
-            Log.i(TAG, "onAppStatusChanged(registered=$registered, plugged=${pluggedDevice?.address})")
+            DiagnosticsLog.i(TAG, if (registered) "Registered as a Bluetooth remote - the TV can now see this phone" else "HID registration was revoked", "plugged=${pluggedDevice?.address}")
             appRegistered = registered
             registrationSignal?.complete(registered)
             if (!registered) {
@@ -342,7 +343,7 @@ class BluetoothHidTransport(
 
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
-            Log.i(TAG, "onConnectionStateChanged(${device?.address}, ${stateName(state)})")
+            DiagnosticsLog.i(TAG, "Link ${stateName(state)} with ${device?.address ?: "unknown device"}")
             when (state) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     connectedDevice = device
@@ -386,7 +387,7 @@ class BluetoothHidTransport(
         override fun onInterruptData(device: BluetoothDevice?, reportId: Byte, data: ByteArray?) = Unit
 
         override fun onVirtualCableUnplug(device: BluetoothDevice?) {
-            Log.i(TAG, "Virtual cable unplugged by ${device?.address}")
+            DiagnosticsLog.w(TAG, "The TV removed this remote (virtual cable unplug)", device?.address)
             connectedDevice = null
             _state.value = ConnectionState.Disconnected("The TV removed this remote")
         }

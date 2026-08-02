@@ -56,6 +56,7 @@ fun ConnectionScreen(
     onSetAutoConnect: (Boolean) -> Unit,
     onSetAutoFallback: (Boolean) -> Unit,
     onSetHaptics: (Boolean) -> Unit,
+    onOpenDiagnostics: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -218,6 +219,19 @@ fun ConnectionScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        SectionCard(title = "Troubleshooting") {
+            Text(
+                text = "If the remote is not reaching the TV, the diagnostics screen shows what " +
+                    "the app is actually doing — the connection handshake, Bluetooth pairing, and " +
+                    "what the network scan found. It also copies a full report to the clipboard.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = onOpenDiagnostics, modifier = Modifier.fillMaxWidth()) {
+                Text("Open diagnostics")
+            }
         }
     }
 }

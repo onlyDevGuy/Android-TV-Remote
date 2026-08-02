@@ -7,6 +7,8 @@ import com.sizwe.tvremote.adb.AdbKeyStore
 import com.sizwe.tvremote.adb.AdbTransport
 import com.sizwe.tvremote.bluetooth.BluetoothHidTransport
 import com.sizwe.tvremote.data.SettingsRepository
+import com.sizwe.tvremote.diagnostics.DiagnosticsCollector
+import com.sizwe.tvremote.diagnostics.LatencyProbe
 import com.sizwe.tvremote.discovery.DeviceDiscovery
 import com.sizwe.tvremote.shortcuts.ShortcutRepository
 import com.sizwe.tvremote.transport.FakeTransport
@@ -47,6 +49,18 @@ class AppContainer(context: Context) {
         bluetooth = bluetoothTransport,
         settings = settings,
         scope = appScope,
+    )
+
+    val latencyProbe = LatencyProbe(adbClient)
+
+    // Declared last: it reads from most of the graph above.
+    val diagnostics = DiagnosticsCollector(
+        context = appContext,
+        keyStore = adbKeyStore,
+        bluetooth = bluetoothTransport,
+        discovery = discovery,
+        transports = transports,
+        settings = settings,
     )
 }
 

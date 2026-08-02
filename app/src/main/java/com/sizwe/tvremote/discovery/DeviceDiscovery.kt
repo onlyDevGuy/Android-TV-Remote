@@ -6,6 +6,7 @@ import android.net.LinkAddress
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.util.Log
+import com.sizwe.tvremote.diagnostics.DiagnosticsLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -62,6 +63,13 @@ class DeviceDiscovery(
     fun scan(): Flow<DiscoveredDevice> = flow {
         val seen = mutableSetOf<String>()
 
+        DiagnosticsLog.i(
+            TAG,
+            "Scan started",
+            "phone=${localIpv4Address() ?: "no IPv4"} " +
+                "subnet=${localSubnetPrefix()?.let { "$it.0/24" } ?: "unavailable"}",
+        )
+
         withTimeoutOrNull(config.overallTimeoutMs) {
             coroutineScope {
                 val results = kotlinx.coroutines.channels.Channel<DiscoveredDevice>(
@@ -94,9 +102,27 @@ class DeviceDiscovery(
                 }
 
                 for (device in results) {
-                    if (seen.add(device.address)) emit(device)
+                    if (seen.add(device.address)) {
+                        DiagnosticsLog.i(
+                            TAG,
+                            "Found ${device.address} via ${device.source}",
+                            device.name?.let { "name=$it tls=${device.requiresTls}" },
+                        )
+                        emit(device)
+                    }
                 }
             }
+        }
+
+        if (seen.isEmpty()) {
+            DiagnosticsLog.w(
+                TAG,
+                "Scan finished with no devices found",
+                "Check the TV is awake, on this same network (not guest Wi-Fi), and that " +
+                    "network debugging is on. Then enter the IP by hand.",
+            )
+        } else {
+            DiagnosticsLog.i(TAG, "Scan finished, ${seen.size} device(s) found")
         }
     }.flowOn(Dispatchers.IO)
 
@@ -237,13 +263,20 @@ class DeviceDiscovery(
         }
 
     /** e.g. "192.168.1" for a phone at 192.168.1.34/24. Null when not on a suitable IPv4 network. */
-    private fun localSubnetPrefix(): String? {
+    fun localSubnetPrefix(): String? =
+        localIpv4Address()?.substringBeforeLast('.')
+
+    /**
+     * The phone's own IPv4 address on the active network. Public because the diagnostics report
+     * needs it: "phone is on 192.168.8.x, TV is on 192.168.1.x" explains an entire failed evening.
+     */
+    fun localIpv4Address(): String? {
         val network = connectivityManager.activeNetwork ?: return null
         val properties = connectivityManager.getLinkProperties(network) ?: return null
         val candidate: LinkAddress = properties.linkAddresses.firstOrNull {
             it.address is Inet4Address && it.prefixLength >= 24 && !it.address.isLoopbackAddress
         } ?: return null
-        return candidate.address.hostAddress?.substringBeforeLast('.')
+        return candidate.address.hostAddress
     }
 
     private companion object {

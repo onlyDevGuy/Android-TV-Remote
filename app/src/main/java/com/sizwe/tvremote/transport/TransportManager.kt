@@ -12,6 +12,7 @@ import com.sizwe.tvremote.core.TransportError
 import com.sizwe.tvremote.core.TransportException
 import com.sizwe.tvremote.core.TransportType
 import com.sizwe.tvremote.data.SettingsRepository
+import com.sizwe.tvremote.diagnostics.DiagnosticsLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.BufferOverflow
@@ -75,7 +76,7 @@ class TransportManager(
         if (_activeType.value == type) return
         _activeType.value = type
         settings.setPreferredTransport(type)
-        Log.i(TAG, "Active transport is now $type")
+        DiagnosticsLog.i(TAG, "Active transport is now ${type.label}")
     }
 
     /**
@@ -185,7 +186,7 @@ class TransportManager(
         val alternate = alternateFor(primary.type) ?: return result
         if (!alternate.state.value.isUsable) return result
 
-        Log.w(TAG, "Falling back from ${primary.type} to ${alternate.type} for $description")
+        DiagnosticsLog.w(TAG, "Falling back from ${primary.type.label} to ${alternate.type.label}", "triggered by: $description")
         val fallbackResult = block(alternate)
         if (fallbackResult.isSuccess) {
             _activeType.value = alternate.type

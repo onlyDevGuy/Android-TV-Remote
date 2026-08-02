@@ -4,6 +4,7 @@ import android.util.Log
 import com.sizwe.tvremote.core.ConnectionState
 import com.sizwe.tvremote.core.TransportError
 import com.sizwe.tvremote.core.TransportException
+import com.sizwe.tvremote.diagnostics.DiagnosticsLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -109,7 +110,7 @@ class AdbClient(
                 address = address,
             )
             startKeepAlive()
-            Log.i(TAG, "Connected to $address (${established.deviceBanner})")
+            DiagnosticsLog.i(TAG, "Connected to $address", established.deviceBanner)
             Result.success(Unit)
         } catch (e: TransportException) {
             _state.value = ConnectionState.Failed(e.error)
@@ -160,7 +161,7 @@ class AdbClient(
                     Result.success("")
                 }
             } catch (e: Throwable) {
-                Log.w(TAG, "Command failed (attempt ${attempt + 1}): $command", e)
+                DiagnosticsLog.w(TAG, "Command failed (attempt ${attempt + 1}): $command", e.message)
                 runCatching { live.close() }
                 connection = null
                 if (attempt == 1) {
@@ -199,7 +200,7 @@ class AdbClient(
                 // `true` is the cheapest possible shell command; we only care that it round-trips.
                 val ok = runCatching { live.shell("true", timeoutMs = 4_000) }.isSuccess
                 if (!ok) {
-                    Log.w(TAG, "Keep-alive failed; treating the session as dead")
+                    DiagnosticsLog.w(TAG, "Keep-alive failed; treating the session as dead")
                     runCatching { live.close() }
                 }
             }

@@ -10,6 +10,10 @@ import com.sizwe.tvremote.core.RemoteTarget
 import com.sizwe.tvremote.core.TransportCapability
 import com.sizwe.tvremote.core.TransportType
 import com.sizwe.tvremote.data.SettingsRepository
+import com.sizwe.tvremote.diagnostics.DiagnosticsLog
+import com.sizwe.tvremote.diagnostics.DiagnosticsSnapshot
+import com.sizwe.tvremote.diagnostics.LatencyProbe
+import com.sizwe.tvremote.diagnostics.LogEntry
 import com.sizwe.tvremote.discovery.DiscoveredDevice
 import com.sizwe.tvremote.discovery.DiscoverySource
 import com.sizwe.tvremote.shortcuts.AppShortcut
@@ -275,6 +279,47 @@ class RemoteViewModel(
     fun dismissNotice() {
         _uiState.value = _uiState.value.copy(notice = null)
     }
+
+    // --- diagnostics ---
+
+    /** Live event log, straight from the singleton the transports write to. */
+    val diagnosticsLog: StateFlow<List<LogEntry>> = DiagnosticsLog.entries
+
+    private val _diagnostics = MutableStateFlow(DiagnosticsUiState())
+    val diagnostics: StateFlow<DiagnosticsUiState> = _diagnostics.asStateFlow()
+
+    data class DiagnosticsUiState(
+        val snapshot: DiagnosticsSnapshot? = null,
+        val latency: LatencyProbe.Result? = null,
+        val isMeasuringLatency: Boolean = false,
+    )
+
+    fun refreshDiagnostics() {
+        viewModelScope.launch {
+            _diagnostics.value = _diagnostics.value.copy(
+                snapshot = container.diagnostics.snapshot(),
+            )
+        }
+    }
+
+    /** Latency is only meaningful over ADB, and only while the session is live. */
+    val canMeasureLatency: Boolean
+        get() = _uiState.value.activeTransport == TransportType.ADB &&
+            _uiState.value.connection.isUsable
+
+    fun runLatencyTest() {
+        if (_diagnostics.value.isMeasuringLatency) return
+        _diagnostics.value = _diagnostics.value.copy(isMeasuringLatency = true)
+        viewModelScope.launch {
+            val result = container.latencyProbe.run()
+            _diagnostics.value = _diagnostics.value.copy(
+                latency = result,
+                isMeasuringLatency = false,
+            )
+        }
+    }
+
+    fun clearDiagnosticsLog() = DiagnosticsLog.clear()
 
     private fun onConnected() {
         viewModelScope.launch {

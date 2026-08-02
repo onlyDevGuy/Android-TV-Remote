@@ -3,6 +3,7 @@ package com.sizwe.tvremote.adb
 import android.util.Log
 import com.sizwe.tvremote.core.TransportError
 import com.sizwe.tvremote.core.TransportException
+import com.sizwe.tvremote.diagnostics.DiagnosticsLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -127,7 +128,7 @@ class AdbConnection private constructor(
     private fun closeInternal(reason: String) {
         if (closedReason != null) return
         closedReason = reason
-        Log.i(TAG, "Closing connection to $host:$port - $reason")
+        DiagnosticsLog.w(TAG, "Connection to $host:$port closed", reason)
         streams.values.forEach { it.onRemoteClose() }
         streams.clear()
         runCatching { socket.close() }
@@ -148,7 +149,9 @@ class AdbConnection private constructor(
                 }
             } catch (e: Throwable) {
                 if (closedReason == null) {
-                    Log.w(TAG, "Read loop ended: ${e.message}")
+                    // EOF here is the normal signature of a TV that went to sleep or a daemon
+                    // that was restarted, so it is worth naming precisely.
+                    DiagnosticsLog.w(TAG, "Read loop ended", "${e::class.java.simpleName}: ${e.message}")
                     closeInternal(e.message ?: e::class.java.simpleName)
                 }
             }
@@ -177,6 +180,7 @@ class AdbConnection private constructor(
 
             AdbProtocol.A_AUTH -> {
                 // adbd re-challenging mid-session means it dropped our authorisation.
+                DiagnosticsLog.e(TAG, "The TV re-challenged mid-session; authorisation was revoked")
                 closeInternal("The TV revoked debugging authorisation")
             }
 
@@ -185,7 +189,7 @@ class AdbConnection private constructor(
                 maxPayload = message.arg1.coerceIn(4096, AdbProtocol.MAX_PAYLOAD)
             }
 
-            else -> Log.d(TAG, "Ignoring ${AdbProtocol.commandName(message.command)}")
+            else -> DiagnosticsLog.d(TAG, "Ignoring ${AdbProtocol.commandName(message.command)}")
         }
     }
 
@@ -208,6 +212,7 @@ class AdbConnection private constructor(
             handshakeTimeoutMs: Int = 30_000,
             onAwaitingAuthorization: () -> Unit = {},
         ): AdbConnection = withContext(Dispatchers.IO) {
+            DiagnosticsLog.i(TAG, "Opening TCP socket to $host:$port")
             val socket = Socket()
             try {
                 socket.tcpNoDelay = true
@@ -217,6 +222,12 @@ class AdbConnection private constructor(
                 throw TransportException(TransportError.Unreachable("$host:$port", e))
             } catch (e: ConnectException) {
                 runCatching { socket.close() }
+                DiagnosticsLog.e(
+                    TAG,
+                    "$host:$port refused the connection",
+                    "Nothing is listening on that port - network debugging is almost " +
+                        "certainly off on the TV.",
+                )
                 throw TransportException(TransportError.NetworkDebuggingOff("$host:$port"))
             } catch (e: NoRouteToHostException) {
                 runCatching { socket.close() }
@@ -262,6 +273,8 @@ class AdbConnection private constructor(
         socket.soTimeout = timeoutMs
         output.writeAdbMessage(AdbProtocol.connect())
 
+        DiagnosticsLog.i(TAG, "-> CNXN sent to $host:$port")
+
         var sentSignature = false
         var sentPublicKey = false
 
@@ -269,16 +282,27 @@ class AdbConnection private constructor(
             val message = try {
                 input.readAdbMessage()
             } catch (e: SocketTimeoutException) {
-                throw TransportException(
-                    if (sentPublicKey) TransportError.AuthorizationRejected
-                    else TransportError.Unreachable("$host:$port", e),
-                )
+                if (sentPublicKey) {
+                    DiagnosticsLog.e(
+                        TAG,
+                        "Timed out waiting for the TV to authorise us",
+                        e,
+                    )
+                    throw TransportException(TransportError.AuthorizationRejected)
+                }
+                DiagnosticsLog.e(TAG, "Handshake timed out with no reply from $host:$port", e)
+                throw TransportException(TransportError.Unreachable("$host:$port", e))
             }
 
             when (message.command) {
                 AdbProtocol.A_CNXN -> {
                     deviceBanner = message.payloadAsString
                     maxPayload = message.arg1.coerceIn(4096, AdbProtocol.MAX_PAYLOAD)
+                    DiagnosticsLog.i(
+                        TAG,
+                        "<- CNXN: authorised by $host:$port",
+                        "maxPayload=$maxPayload banner=$deviceBanner",
+                    )
                     // Back to a normal (long) timeout now that the handshake is done; the read
                     // loop must not wake up every 30s just because the TV is idle.
                     socket.soTimeout = 0
@@ -287,41 +311,74 @@ class AdbConnection private constructor(
 
                 AdbProtocol.A_AUTH -> {
                     if (message.arg0 != AdbProtocol.AUTH_TYPE_TOKEN) {
+                        DiagnosticsLog.e(TAG, "Unexpected AUTH subtype ${message.arg0}")
                         throw TransportException(
                             TransportError.Protocol("Unexpected AUTH subtype ${message.arg0}"),
                         )
                     }
                     when {
                         !sentSignature -> {
+                            DiagnosticsLog.i(
+                                TAG,
+                                "<- AUTH TOKEN (${message.payload.size} bytes), signing it",
+                            )
                             val signature = AdbCrypto.signToken(
                                 keyPair.private as RSAPrivateKey,
                                 message.payload,
                             )
                             output.writeAdbMessage(AdbProtocol.authSignature(signature))
                             sentSignature = true
+                            DiagnosticsLog.i(TAG, "-> AUTH SIGNATURE sent (${signature.size} bytes)")
                         }
 
                         !sentPublicKey -> {
                             // The signature was not recognised: introduce ourselves. This is the
                             // step that raises the on-TV prompt, and it can sit here for as long
                             // as the user takes to find the remote.
+                            DiagnosticsLog.i(
+                                TAG,
+                                "<- AUTH TOKEN again: the TV does not know this key",
+                                "Sending our public key. The TV should now show " +
+                                    "\"Allow debugging?\" - accept it there.",
+                            )
                             val publicKey = AdbCrypto.encodePublicKey(keyPair.public as RSAPublicKey)
                             output.writeAdbMessage(AdbProtocol.authPublicKey(publicKey))
                             sentPublicKey = true
                             onAwaitingAuthorization()
                         }
 
-                        else -> throw TransportException(TransportError.AuthorizationRejected)
+                        else -> {
+                            DiagnosticsLog.e(
+                                TAG,
+                                "The TV rejected our public key",
+                                "It challenged us a third time. Clear the authorisation in " +
+                                    "settings and retry, then accept the prompt on the TV.",
+                            )
+                            throw TransportException(TransportError.AuthorizationRejected)
+                        }
                     }
                 }
 
-                AdbProtocol.A_STLS -> throw TransportException(TransportError.TlsRequired("$host:$port"))
+                AdbProtocol.A_STLS -> {
+                    DiagnosticsLog.e(
+                        TAG,
+                        "$host:$port demanded ADB over TLS, which this app does not speak",
+                        "Use the legacy port 5555 debugging toggle, or the Bluetooth transport.",
+                    )
+                    throw TransportException(TransportError.TlsRequired("$host:$port"))
+                }
 
-                else -> throw TransportException(
-                    TransportError.Protocol(
+                else -> {
+                    DiagnosticsLog.e(
+                        TAG,
                         "Unexpected ${AdbProtocol.commandName(message.command)} during handshake",
-                    ),
-                )
+                    )
+                    throw TransportException(
+                        TransportError.Protocol(
+                            "Unexpected ${AdbProtocol.commandName(message.command)} during handshake",
+                        ),
+                    )
+                }
             }
         }
     }

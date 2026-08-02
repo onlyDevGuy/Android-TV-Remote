@@ -56,6 +56,22 @@ class AdbKeyStore(context: Context) {
     val exists: Boolean
         get() = privateKeyFile.exists() && publicKeyFile.exists()
 
+    /**
+     * Short SHA-256 fingerprint of the stored public key, for the diagnostics report.
+     *
+     * If the TV starts asking for authorisation again, comparing this against the previous value
+     * tells you immediately whether the identity was regenerated (our bug) or the TV forgot it
+     * (the TV's), which is otherwise guesswork.
+     */
+    fun fingerprint(): String? {
+        if (!publicKeyFile.exists()) return null
+        return runCatching {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(publicKeyFile.readBytes())
+            digest.take(8).joinToString(":") { "%02x".format(it) }
+        }.getOrNull()
+    }
+
     private fun loadOrCreate(): KeyPair {
         if (privateKeyFile.exists() && publicKeyFile.exists()) {
             runCatching {

@@ -19,7 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
-private enum class Screen { REMOTE, CONNECTION }
+private enum class Screen { REMOTE, CONNECTION, DIAGNOSTICS }
 
 /**
  * Root composable. Two screens and a text-entry dialog is the whole app, so navigation is a single
@@ -78,11 +78,35 @@ fun RemoteApp(viewModel: RemoteViewModel) {
                 onSetAutoConnect = viewModel::setAutoConnect,
                 onSetAutoFallback = viewModel::setAutoFallback,
                 onSetHaptics = viewModel::setHaptics,
+                onOpenDiagnostics = {
+                    viewModel.refreshDiagnostics()
+                    screen = Screen.DIAGNOSTICS
+                },
                 onBack = { screen = Screen.REMOTE },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
             )
+
+            Screen.DIAGNOSTICS -> {
+                val log by viewModel.diagnosticsLog.collectAsStateWithLifecycle()
+                val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
+
+                DiagnosticsScreen(
+                    entries = log,
+                    snapshot = diagnostics.snapshot,
+                    latency = diagnostics.latency,
+                    isMeasuringLatency = diagnostics.isMeasuringLatency,
+                    canMeasureLatency = viewModel.canMeasureLatency,
+                    onRunLatencyTest = viewModel::runLatencyTest,
+                    onClearLog = viewModel::clearDiagnosticsLog,
+                    onRefreshSnapshot = viewModel::refreshDiagnostics,
+                    onBack = { screen = Screen.CONNECTION },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                )
+            }
         }
     }
 
