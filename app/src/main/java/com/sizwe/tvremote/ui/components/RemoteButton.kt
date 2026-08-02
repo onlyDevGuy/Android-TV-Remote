@@ -24,7 +24,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
@@ -82,7 +87,22 @@ fun RemoteButton(
                     onTap = { onClick?.invoke() },
                 )
             }
-            .semantics { contentDescription = label },
+            .semantics {
+                contentDescription = label
+                role = Role.Button
+                if (!enabled) {
+                    disabled()
+                }
+                onClick {
+                    if (onClick != null) {
+                        onClick()
+                    } else {
+                        onPress()
+                        onRelease()
+                    }
+                    true
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
         if (icon != null) {
@@ -131,6 +151,18 @@ fun RemotePillButton(
             .pointerInput(enabled, onClick) {
                 if (!enabled) return@pointerInput
                 detectTapGestures(onTap = { onClick() })
+            }
+            .semantics {
+                contentDescription = label
+                role = Role.Button
+                if (!enabled) {
+                    disabled()
+                }
+                this.selected = selected
+                onClick {
+                    onClick()
+                    true
+                }
             },
         contentAlignment = Alignment.Center,
     ) {
