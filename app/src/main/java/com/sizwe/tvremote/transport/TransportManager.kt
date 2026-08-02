@@ -72,11 +72,39 @@ class TransportManager(
 
     // --- selection ---
 
+    /**
+     * Switches the live transport and brings it up.
+     *
+     * Connecting here is the whole point: every control on the remote is disabled unless the
+     * active transport reports [ConnectionState.isUsable], so merely flipping the flag would hand
+     * the user a dead remote and no explanation. Demo needs no target and connects instantly;
+     * the real transports reconnect to whatever was last used, and surface their own error if
+     * there is nothing to reconnect to.
+     */
     suspend fun select(type: TransportType) {
         if (_activeType.value == type) return
         _activeType.value = type
         settings.setPreferredTransport(type)
         DiagnosticsLog.i(TAG, "Active transport is now ${type.label}")
+
+        val transport = transportFor(type)
+        if (transport.state.value.isUsable) return
+
+        val saved = settings.settings.first()
+        when (type) {
+            TransportType.FAKE ->
+                fake.connect(RemoteTarget.Network("demo", 0, "Demo device"))
+
+            TransportType.ADB -> {
+                val host = saved.lastHost ?: return
+                adb.connect(RemoteTarget.Network(host, saved.lastPort, saved.lastDeviceLabel ?: host))
+            }
+
+            TransportType.BLUETOOTH_HID -> {
+                val mac = saved.bluetoothMac ?: return
+                bluetooth.connect(RemoteTarget.BluetoothDevice(mac))
+            }
+        }
     }
 
     /**
